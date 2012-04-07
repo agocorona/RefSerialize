@@ -1,0 +1,84 @@
+runW applies showp, the serialization parser of the instance Int for the RefSerialize class
+
+Data.RefSerialize>let x= 5 :: Int
+Data.RefSerialize>runW $ showp x
+"5"
+
+every instance of Read and Show is an instance of RefSerialize. for how to construct showp and readp parsers, see the demo.hs
+
+rshowp is derived from showp, it labels the serialized data with a variable name
+
+Data.RefSerialize>runW $ rshowp x
+" v8 where {v8= 5; }"
+
+Data.RefSerialize>runW $ rshowp [2::Int,3::Int]
+" v6 where {v6= [ v9,  v10]; v9= 2; v10= 3; }"
+
+while showp does a normal show serialization
+
+Data.RefSerialize>runW $ showp [x,x]
+"[5, 5]"
+
+rshowp variables are serialized memory references: no piece of data that point to the same addrees is serialized but one time
+
+Data.RefSerialize>runW $ rshowp [x,x]
+" v9 where {v6= 5; v9= [ v6, v6]; }"
+
+"this happens recursively"
+
+Data.RefSerialize>let xs= [x,x] in str = runW $ rshowp [xs,xs]
+Data.RefSerialize>str
+" v8 where {v8= [ v10, v10]; v9= 5; v10= [ v9, v9]; }"
+
+the rshowp serialized data is read with rreadp. The showp serialized data is read by readp
+
+Data.RefSerialize>let xss= runR rreadp str :: [[Int]]
+Data.RefSerialize>print xss
+[[5,5],[5,5]]
+
+this is the deserialized data
+
+the deserialized data keep the references!! pointers are restored! That is the whole point!
+
+Data.RefSerialize>varName xss !! 0 == varName xss !! 1
+True
+
+
+rShow= runW rshowp
+rRead= runR rreadp
+
+Data.RefSerialize>rShow x
+" v11 where {v11= 5; }"
+
+
+In the definition of a referencing parser non referencing parsers can be used and viceversa. Use a referencing parser
+when the piece of data is being referenced many times inside the serialized data.
+
+by default the referencing parser is constructed by:
+
+rshowp= insertVar showp
+rreadp= readVar readp
+but this can be redefined. See for example the instance of [] in RefSerialize.hs
+
+This is an example of a showp parser for a simple data structure.
+
+data S= S Int Int deriving ( Show, Eq)
+
+instance  Serialize S  where
+    showp (S x y)= do
+                    xs <- rshowp x  -- rshowp parsers can be inside showp parser
+                    ys <- rshowp y
+                    return $ "S "++xs++" "++ys
+
+
+
+    readp =  do
+                    symbol "S"     -- I included a (almost) complete Parsec for deserialization
+                    x <- rreadp
+                    y <- rreadp
+                    return $ S x y
+
+there is a mix between referencing and no referencing parser here:
+
+Data.RefSerialize>putStrLn $ runW $ showp $ S x x
+S  v23 v23 where {v23= 5; }

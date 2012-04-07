@@ -1,0 +1,471 @@
+{-# OPTIONS -XOverlappingInstances
+            -XTypeSynonymInstances
+            -XFlexibleInstances
+            -XUndecidableInstances
+            -XOverloadedStrings
+              #-}
+
+-----------------------------------------------------------------------------
+--
+-- Module      :  Data.RefSerialize
+-- Copyright   :  Alberto Gómez Corona
+-- License     :  see LICENSE
+--
+-- Maintainer  :  agocorona@gmail.com
+-- Stability   :  experimental
+
+
+-- |   Read, Show and Data.Binary do not check for repeated references to the same address.
+--     As a result, the data is duplicated when seri<alized. This is a waste of space in the filesystem
+--     and  also a waste of serialization time. but the worst consequence is that, when the serialized data is read,
+--     it allocates multiple copies for the same object when referenced multiple times. Because multiple referenced
+--     data is very typical in a pure language such is Haskell, this means that the resulting data loose the beatiful
+--     economy of space and processing time that referential transparency permits.
+--
+--     Here comes a brief tutorial:
+--
+--     @runW applies showp, the serialization parser of the instance Int for the RefSerialize class
+--
+--    Data.RefSerialize>let x= 5 :: Int
+--    Data.RefSerialize>runW $ showp x
+--    "5"
+--
+--    every instance of Read and Show is an instance of RefSerialize. for how to construct showp and readp parsers, see the demo.hs
+--
+--    rshowp is derived from showp, it labels the serialized data with a variable name
+--
+--    Data.RefSerialize>runW $ rshowp x
+--    " v8 where {v8= 5; }"
+--
+--    Data.RefSerialize>runW $ rshowp [2::Int,3::Int]
+--    " v6 where {v6= [ v9,  v10]; v9= 2; v10= 3; }"
+--
+--    while showp does a normal show serialization
+--
+--    Data.RefSerialize>runW $ showp [x,x]
+--    "[5, 5]"
+--
+--    rshowp variables are serialized memory references: no piece of data that point to the same addrees is serialized but one time
+--
+--    Data.RefSerialize>runW $ rshowp [x,x]
+--    " v9 where {v6= 5; v9= [ v6, v6]; }"
+--
+--
+--
+--    "this happens recursively"
+--
+--    Data.RefSerialize>let xs= [x,x] in str = runW $ rshowp [xs,xs]
+--    Data.RefSerialize>str
+--    " v8 where {v8= [ v10, v10]; v9= 5; v10= [ v9, v9]; }"
+--
+--    the rshowp serialized data is read with rreadp. The showp serialized data is read by readp
+--
+--    Data.RefSerialize>let xss= runR rreadp str :: [[Int]]
+--    Data.RefSerialize>print xss
+--    [[5,5],[5,5]]
+--
+--    this is the deserialized data
+--
+--    the deserialized data keep the references!! pointers are restored! That is the whole point!
+--
+--    Data.RefSerialize>varName xss !! 0 == varName xss !! 1
+--    True
+--
+--
+--    rShow= runW rshowp
+--    rRead= runR rreadp
+--
+--    Data.RefSerialize>rShow x
+--    " v11 where {v11= 5; }"
+--
+--
+--    In the definition of a referencing parser non referencing parsers can be used and viceversa. Use a referencing parser
+--    when the piece of data is being referenced many times inside the serialized data.
+--
+--    by default the referencing parser is constructed by:
+--
+--
+--    rshowp= insertVar showp
+--    rreadp= readVar readp
+--    but this can be redefined. See for example the instance of [] in RefSerialize.hs
+--
+--    This is an example of a showp parser for a simple data structure.
+--
+--    data S= S Int Int deriving ( Show, Eq)
+--
+--    instance  Serialize S  where
+--        showp (S x y)= do
+--                        xs <- rshowp x  -- rshowp parsers can be inside showp parser
+--                        ys <- rshowp y
+--                        return $ "S " `append` xs`append`" "`append`ys
+--
+--
+--
+--       readp =  do
+--                        symbol "S"     -- I included a (almost) complete Parsec for deserialization
+--                        x <- rreadp
+--                        y <- rreadp
+--                        return $ S x y
+--
+--    there is a mix between referencing and no referencing parser here:
+--
+--    Data.RefSerialize>putStrLn $ runW $ showp $ S x x
+--    S  v23 v23 where {v23= 5; }@
+
+
+
+
+
+
+
+module Data.RefSerialize
+(
+     module Data.RefSerialize.Parser
+    ,Serialize(
+        showp
+       ,readp
+     )
+    ,rshowp
+    ,rreadp
+    ,showpText
+    ,readpText
+    ,takep
+    ,showpBinary
+    ,readpBinary
+    ,rShow
+    ,rRead
+    ,insertVar
+    ,readVar
+    ,varName
+    ,runR
+    ,runW
+    ,readHexp
+    ,showHexp
+    ,getContext
+)
+
+ where
+import qualified Data.Map as M
+import Data.RefSerialize.Serialize
+import Data.RefSerialize.Parser
+import Unsafe.Coerce
+import Data.Char(isAlpha, isSpace, isAlphaNum)
+import Numeric(readHex,showHex)
+import Data.Map
+import Data.ByteString.Lazy.Char8 as B
+import Debug.Trace
+import Data.Binary
+
+class Serialize c where
+
+   showp :: c -> ST ByteString     -- ^   shows the content of a expression, must be  defined bu the user
+
+   readp ::  ST c                     -- ^ read the content of a expression, must be user defined
+
+-- | insert a reference (a variable in the where section).
+
+-- @rshowp  = insertVar  showp @
+rshowp :: Serialize c => c -> ST ByteString
+rshowp  = insertVar  showp
+
+ --  | read a variable in the where section (to use for deserializing rshowp output).
+
+ --   @rreadp  = readVar  readp@
+rreadp ::  Serialize c => ST c
+rreadp = readVar  readp
+
+{-
+#ifdef Axioms
+
+   serializeAxioms: Axioms c
+   serializeAxioms= axioms{
+         unary=   [Axiom "reverse"
+                            (\x ->  let str= rShow x
+                                        y = rRead xtr
+                                    in  y== x)
+
+                   AxioM "pointer equality"
+                           (\x ->   let str= rShow[x,x]
+                                        [y,z] = rRead str
+                                    in varName y== varName z)
+                  ]
+        }
+#endif
+-}
+
+
+
+-- | return the serialized list of variable values
+-- useful for late bindings, in case of dynamic variables were deserialization
+-- is done when needed, once the type is known.
+
+getContext :: ST ByteString
+getContext = ST(\(Stat(c,s,v)) -> Right (Stat (c,s,v), v))
+
+-- | use the rshowp parser to serialize the object
+-- @ rShow c= runW  $  rshowp c@
+rShow :: Serialize c => c -> ByteString
+rShow c= runW  $  rshowp c
+
+-- | deserialize  trough the rreadp parser
+-- @ rRead str= runR rreadp $ str@
+rRead :: Serialize c => ByteString -> c
+rRead str= runR rreadp $ str
+
+readHexp :: (Num a, Integral a) => ST a
+readHexp = ST(\(Stat(c,s,v)) ->
+   let us= unpack s
+       l=  readHex  us
+   in if Prelude.null l then Left . Error $  "not readable: " ++ us
+         else let ((x,str2):_)= l
+              in Right(Stat(c, pack $ Prelude.dropWhile isSpace str2,v),x) )
+   <?> "readHexp "
+
+-- |if a is an instance of Read, readpText can be used as the readp method
+-- the drawback is that the data inside is not inspected for common references
+-- so it is recommended to create your own readp method for your complex data structures
+readpText :: Read a => ST a
+readpText = ST(\(Stat(c,s,v)) ->
+   let us= unpack s
+       l=  readsPrec 1 us
+   in if Prelude.null l then Left . Error $  "not readable: " ++ us
+         else let ((x,str2):_)= l
+              in Right(Stat(c, pack $ Prelude.dropWhile isSpace str2,v),x) )
+   <?> "readp: readsPrec "
+
+
+--readpText = ST(\(Stat(c,s,v)) -> let ((x,str2):_)= readsPrec 1 s in Right(Stat(c,str2,v),x) )
+
+
+-- |  deserialize the string with the parser
+runR:: ST a -> ByteString ->  a
+runR   (ST f) str=
+    let (struct, vars)= readContext "where " str
+    in  case   f (Stat(M.empty,struct,vars) ) of
+          Right (Stat _, a) -> a
+          Left (Error s) -> error s
+
+showHexp :: (Num a,Integral a) => a -> ST ByteString
+showHexp var= ST(\(Stat(c,s,v)) ->  Right(Stat(c,s,v),pack $ showHex var ""))  <?> "showHexp "
+
+-- |if a is an instance of Show, showpText can be used as the showp method
+-- the drawback is that the data inside is not inspected for common references
+-- so it is recommended to create your own readp method for your complex data structures
+showpText :: Show a => a -> ST ByteString
+showpText var= ST(\(Stat(c,s,v)) ->  Right(Stat(c,s,v),pack $ show var))   <?> "showp: show "
+
+
+-- |   serialize x with the parser
+runW :: ST ByteString -> ByteString
+runW (ST f) = case  f (Stat(M.empty,"",""))  of
+              Right (Stat (c,_,_), str) ->
+                let scontext= M.assocs c
+                    vars= B.concat $ Prelude.map (\(n,(_,v))->"v" `append`  (pack $ show n)  `append`  "= "  `append`  v  `append`  ";\n ")  scontext
+
+                    strContext= if Prelude.null scontext  then "" else  "\n where {\n" `append` vars  `append`  "\n}"
+
+                in  str  `append`  strContext
+
+              Left (Error s) -> error s
+
+
+
+
+
+-- | insert a variable at this position. The expression value is inserted in the "where" section if it is not already
+-- created. If the address of this object being parsed correspond with an address already parsed and
+-- it is in the where section, then the same variable name is used
+--   @runW showp (1::Int)                                -> "1"
+--   runW (insertVar showp) (1::Int)                ->  v1 where { v1=1}
+--   runW (insertVar showp) [(1::Int) ,1]        -> [v1.v1] where { v1=1}@
+--   This is useful when the object is referenced many times
+
+insertVar :: (a -> ST ByteString) -> a -> ST ByteString
+insertVar parser x= ST(\(Stat(c,s,v))->
+ let mf = trytofindEntireObject x c in
+ case mf of
+   Just  var ->  Right(Stat(c,s,v),var)
+   Nothing ->
+         let
+            ST f= parser x
+            Right (Stat (c',_,_), str) = f  (Stat(c,s,v))
+
+         in Right(Stat(addc str c',s,v), cons ' ' varname))
+ where
+  addc str c= M.insert ( hash) (unsafeCoerce x,  str) c
+  hash = hasht x
+  varname=  pack$ "v" ++ show hash
+
+  trytofindEntireObject x c=
+         case M.lookup  hash  c  of
+           Nothing -> Nothing
+           Just _  -> Just varname
+
+
+-- | deserialize a variable serialized with insertVar. Memory references are restored
+readVar :: Serialize c => ST c -> ST c
+readVar (ST f)=  ST(\(Stat(c,s,v))->
+     let
+               s1= B.dropWhile isSpace s
+               (var, str2) = B.span isAlphaNum s1
+               nvar= numVar $ unpack var
+
+     in  if B.null var then Left (Error "expected variable name" )
+         else
+          case  trytofindEntireObject nvar c of
+
+           Just  (x,_) ->  Right(Stat(c,str2,v),unsafeCoerce x)
+           Nothing ->
+            let
+               (_, rest)= readContext (var `append` "= ") v
+
+            in if B.null rest then Left (Error ( "RedSerialize: readVar: " ++ unpack var ++ "value not found" ))
+               else  case f  (Stat(c,rest,v)) of
+
+                 Right (Stat(c',s',v'),x) ->
+                   let c''= M.insert nvar (unsafeCoerce x,  "") c'
+                   in  Right (Stat(c'',str2,v),x)
+
+                 err -> err)
+  where
+  trytofindEntireObject x c=
+         case M.lookup   x  c  of
+           Nothing -> Nothing
+           justx   -> justx
+
+
+-- -------------Instances
+
+
+instance Serialize String where
+    showp = showpText
+    readp = readpText
+
+instance  Serialize a => Serialize [a] where
+   showp []= return "[]"
+   showp (x:xs)= do
+           s1<- rshowp x
+           sn<- mapM f xs
+           return $ "[" `append`  s1 `append`  B.concat sn  `append` "]"
+           where
+           f x= do str <- rshowp x
+                   return $ ", " `append` str
+
+   readp = (brackets $ commaSep $ rreadp)   <?> "readp:: [] "
+
+
+
+
+
+instance (Serialize a, Serialize b) => Serialize (a, b) where
+    showp (x, y)= do
+            sx <- rshowp x
+            sy <- rshowp y
+            return $ "(" `append`  sx  `append`  ","  `append`  sy  `append`  ")"
+
+    readp =  parens (do
+            x <- rreadp
+            comma
+            y <- rreadp
+            return (x,y))
+            <?> "rreadp:: (,) "
+
+instance (Serialize a, Serialize b, Serialize c) => Serialize (a, b,c) where
+    showp (x, y, z)= do
+            sx <- rshowp x
+            sy <- rshowp y
+            sz <- rshowp z
+            return $ "(" `append`  sx  `append`  ","  `append`  sy   `append` ","  `append`  sz  `append`  ")"
+
+    readp =  parens (do
+            x <- rreadp
+            comma
+            y <- rreadp
+            comma
+            z <- rreadp
+            return (x,y,z))
+            <?> "rreadp:: (,,) "
+
+instance (Serialize a, Serialize b, Serialize c, Serialize d) => Serialize (a, b,c, d) where
+    showp (x, y, z, t)= do
+            sx <- rshowp x
+            sy <- rshowp y
+            sz <- rshowp z
+            st <- rshowp t
+            return $ "(" `append`  sx  `append`  ","  `append`  sy   `append` ","  `append`  sz  `append`  ","  `append`  st  `append`  ")"
+
+    readp =  parens (do
+            x <- rreadp
+            comma
+            y <- rreadp
+            comma
+            z <- rreadp
+            comma
+            t <- rreadp
+            return (x,y,z,t))
+            <?> "rreadp:: (,,,) "
+
+instance (Serialize a, Ord a, Serialize b) => Serialize (Map a b) where
+    showp m= showp $ M.toList m
+    readp= do
+           list <- readp  -- :: ST [(a,b)]
+           return $ M.fromList list
+
+
+
+
+instance Serialize a => Serialize (Maybe a) where
+    showp Nothing = return "Nothing"
+    showp (Just x) = showp x >>= \sx -> return $ "Just "  `append`  sx
+    readp =  choice [rNothing, rJust] where
+      rNothing = symbol "Nothing" >> return Nothing
+      rJust = symbol "Just" >> readp >>= \x -> return $ Just x
+
+instance (Serialize a, Serialize b) => Serialize (Either a b) where
+    showp (Left x) = rshowp x >>= \sx -> return $ "Left "  `append`  sx
+
+    showp (Right x) = rshowp x >>= \sx -> return $ "Right "  `append`  sx
+
+    readp =  choice [rLeft, rRight] where
+      rLeft = symbol "Left" >> rreadp >>= \x -> return $ Left x
+      rRight = symbol "Right" >> rreadp >>= \x -> return $ Right x
+
+-- | defualt instances
+
+instance (Show a, Read a) => Serialize a where
+    showp = showpText
+    readp = readpText
+
+
+
+-- binary serialization
+
+
+binPrefix=   "Bin "
+binPrefixSp= append (pack binPrefix) " "
+
+showpBinary :: Binary a => a -> ST ByteString
+showpBinary x = do
+      let s =  encode x
+          n = pack . show $ B.length s
+      return $  binPrefixSp `append` n `append` " " `append` s
+
+readpBinary :: Binary a => ST a
+readpBinary = do
+      symbol binPrefix
+      n <- integer
+      str <- takep $ fromIntegral n
+      let x = decode str
+      return x
+
+
+takep :: Int -> ST ByteString
+takep n= take1 "" n
+  where
+  take1 s 0= return s
+  take1 s n= anyChar >>= \x -> take1 (snoc s x) (n-1)
+
+
+
+
+

@@ -1,6 +1,6 @@
 {- |  A Parsec parser for the refSerialize monad. See package Parsec. all the functions have the same meaning
 -}
-module Data.RefSerialize.Parser( ST(..),(<?>),(<|>),char,anyChar, string, upper, space, digit
+module Data.RefSerialize.Parser( STR(..),StatR(..),(<?>),(<|>),char,anyChar, string, upper, space, digit
                  , sepBy, between, choice, option, notFollowedBy, many, manyTill, oneOf, noneOf
                  , bool
 
@@ -42,18 +42,18 @@ import qualified Data.Map as M
 import Data.RefSerialize.Serialize
 import Data.ByteString.Lazy.Char8
 
-
-data ST a= ST(Stat-> Either Error (Stat , a) )
+data StatR= StatR (Context, ByteString, ByteString)
+data STR a= STR(StatR-> Either Error (StatR , a) )
 
 -- | monadic serialization & deserialization
-instance  Monad ST where
-    return  x = ST (\s -> Right (s, x))
-    ST g >>= f = ST (\s ->
+instance  Monad STR where
+    return  x = STR (\s -> Right (s, x))
+    STR g >>= f = STR (\s ->
 
                        case g s of
                         Right (s', x)->
                           let
-                              ST fun  = f x
+                              STR fun  = f x
                           in  case  fun s' of
                                left@(Left msg) -> left
                                rigth->  rigth
@@ -62,8 +62,8 @@ instance  Monad ST where
 
                     )
 
-instance MonadPlus ST where
-  mzero= ST (\(Stat (a,b,c)) -> Left $ Error "an error occurred")
+instance MonadPlus STR where
+  mzero= STR (\(StatR (a,b,c)) -> Left $ Error "an error occurred")
   mplus p1 p2   = parsecPlus p1 p2
 
 infixr 1 <|>
@@ -72,9 +72,9 @@ infix  0 <?>
 
 p <?> msg = label p msg
 
-parsecPlus :: ST a -> ST a -> ST a
-parsecPlus (ST p1) (ST p2)
-    = ST (\state ->
+parsecPlus :: STR a -> STR a -> STR a
+parsecPlus (STR p1) (STR p2)
+    = STR (\state ->
         case (p1 state) of
           Left (Error s) -> case (p2 state) of
                                  Left (Error s') -> Left $ Error ( s++ "\n"++ s')
@@ -83,75 +83,75 @@ parsecPlus (ST p1) (ST p2)
       )
 
 
-label :: ST a -> String -> ST a
+label :: STR a -> String -> STR a
 label p msg
   = labels p [msg]
 
-labels :: ST a -> [String] -> ST a
-labels (ST p) msgs
-    = ST (\state ->
+labels :: STR a -> [String] -> STR a
+labels (STR p) msgs
+    = STR (\state ->
         case (p state) of
           Left(Error reply) -> Left $  Error ( reply ++Prelude.concatMap ("\n in "++) msgs)
 
           other       -> other
       )
 
-char :: Char -> ST Char
+char :: Char -> STR Char
 
 unexpectedEndOfInput= "unexpected end of input"
-char c= ST(\(Stat(cs,s,v)) ->
+char c= STR(\(StatR(cs,s,v)) ->
    if null s then Left (Error $ unexpectedEndOfInput)
-   else if c== head s then Right(Stat(cs,tail s,v), c)
+   else if c== head s then Right(StatR(cs,tail s,v), c)
    else Left (Error ( "char "++ c:" not match " ++ '\"':unpack s++"\"" )))
 
 
-anyChar = ST(\(Stat(cs,s,v)) ->
+anyChar = STR(\(StatR(cs,s,v)) ->
     if null s then Left (Error $ unexpectedEndOfInput)
-    else Right(Stat(cs,tail s,v), head s))
+    else Right(StatR(cs,tail s,v), head s))
 
-satisfy bf= ST(\(Stat(cs,s,v)) ->  let  heads= head s in
+satisfy bf= STR(\(StatR(cs,s,v)) ->  let  heads= head s in
      if null s then Left (Error $ unexpectedEndOfInput)
-     else if bf heads then  Right(Stat(cs,tail s,v), heads)
+     else if bf heads then  Right(StatR(cs,tail s,v), heads)
      else Left (Error ( "satisfy  not matching condition in " ++ '\"':unpack s++"\"" )))
 
 
-upper = ST(\(Stat(cs,s,v)) ->  let  heads= head s in
+upper = STR(\(StatR(cs,s,v)) ->  let  heads= head s in
      if null s then Left (Error $ unexpectedEndOfInput)
-     else if isUpper (head s) then  Right(Stat(cs,tail s,v), head s)
+     else if isUpper (head s) then  Right(StatR(cs,tail s,v), head s)
      else Left (Error ( "upper  not matching condition in " ++ '\"':unpack s++"\"" )))
 
 
-space =ST(\(Stat(cs,s,v)) ->  let  heads= head s in
+space =STR(\(StatR(cs,s,v)) ->  let  heads= head s in
      if null s then Left (Error $ unexpectedEndOfInput)
-     else if isSpace heads then Right(Stat(cs,tail s,v), heads)
+     else if isSpace heads then Right(StatR(cs,tail s,v), heads)
      else Left (Error ( "expected space at the head of " ++ unpack s )))
 
 
-digit1 l1 l2= ST(\(Stat(cs,s,v)) -> let c= head s in  if c >= l1 && c <= l2  then Right(Stat(cs,tail s,v), c)
+digit1 l1 l2= STR(\(StatR(cs,s,v)) -> let c= head s in  if c >= l1 && c <= l2  then Right(StatR(cs,tail s,v), c)
                                      else Left (Error ( "expected digit at the head of " ++ unpack s )))
 
-empty = ST(\(Stat(cs,s,v)) ->   if null s  then Right(Stat(cs, s,v), ())
+empty = STR(\(StatR(cs,s,v)) ->   if null s  then Right(StatR(cs, s,v), ())
                                      else Left (Error ( "expected empty list" )))
 
 octDigit= digit1 '0' '7'
 
 digit= digit1 '0' '9'
 
-hexDigit= ST(\(Stat(cs,s,v)) ->  let c= head s in if c >= '0' && c <= '9'  || c >= 'a' && c<='f'  || c >= 'A' && c <= 'F'  then Right(Stat(cs,tail s,v), c)
+hexDigit= STR(\(StatR(cs,s,v)) ->  let c= head s in if c >= '0' && c <= '9'  || c >= 'a' && c<='f'  || c >= 'A' && c <= 'F'  then Right(StatR(cs,tail s,v), c)
                                      else Left (Error ( "expected space at the head of " ++ unpack s )))
 
-oneOf xs= ST(\(Stat(cs,s,v)) -> let c= head s in if c `Prelude.elem` xs then Right(Stat(cs,tail s,v), c)
+oneOf xs= STR(\(StatR(cs,s,v)) -> let c= head s in if c `Prelude.elem` xs then Right(StatR(cs,tail s,v), c)
                                      else Left (Error ( "expected digit at the head of " ++ unpack s )))
 
-noneOf xs= ST(\(Stat(cs,s,v)) -> let c= head s in if not $ c `Prelude.elem` xs then Right(Stat(cs,tail s,v), c)
+noneOf xs= STR(\(StatR(cs,s,v)) -> let c= head s in if not $ c `Prelude.elem` xs then Right(StatR(cs,tail s,v), c)
                                      else Left (Error ( "expected digit at the head of " ++ unpack s )))
 
 try p= p
 
 unexpected msg
-    = ST (\state -> Left (Error $ msg++ "unexpected"))
+    = STR (\state -> Left (Error $ msg++ "unexpected"))
 
-sepBy1,sepBy :: ST a -> ST  sep -> ST  [a]
+sepBy1,sepBy :: STR a -> STR  sep -> STR  [a]
 sepBy p sep         = sepBy1 p sep <|> return []
 sepBy1 p sep        = do{ x <- p
                         ; xs <- many (sep >> p)
@@ -196,9 +196,9 @@ string ys@(x:xs)= do
 
 bool = lexeme ( do{ symbol "True" ; return True} <|> do{ symbol "False" ; return False})   <?> "Bool"
 
-many :: ST a -> ST [a]
+many :: STR a -> STR [a]
 many p = many1 p <|> return []
-many1 :: ST a -> ST [a]
+many1 :: STR a -> STR [a]
 many1 p = do {a <- p; as <- many p; return (a:as)}
 
 
@@ -226,7 +226,7 @@ semiSep1 p      = sepBy1 p semi
 -----------------------------------------------------------
 -- Chars & Strings
 -----------------------------------------------------------
--- charLiteral :: ST Char
+-- charLiteral :: STR Char
 charLiteral     = lexeme (between (char '\'')
                                 (char '\'' <?> "end of character")
                                 characterChar )
@@ -240,7 +240,7 @@ charLetter      = satisfy (\c -> (c /= '\'') && (c /= '\\') && (c > '\026'))
 
 
 
--- stringLiteral :: ST String
+-- stringLiteral :: STR String
 stringLiteral   = lexeme (
                 do{ str <- between (char '"')
                                         (char '"' <?> "end of string")
@@ -249,7 +249,7 @@ stringLiteral   = lexeme (
                 }
                 <?> "literal string")
 
--- stringChar :: ST (Maybe Char)
+-- stringChar :: STR (Maybe Char)
 stringChar      =   do{ c <- stringLetter; return (Just c) }
                 <|> stringEscape
                 <?> "string character"
@@ -273,13 +273,13 @@ escapeGap       = do{ many1 space
 escapeCode      = charEsc <|> charNum <|> charAscii <|> charControl
                 <?> "escape code"
 
--- charControl :: ST Char
+-- charControl :: STR Char
 charControl     = do{ char '^'
                 ; code <- upper
                 ; return (toEnum (fromEnum code - fromEnum 'A'))
                 }
 
--- charNum :: ST Char
+-- charNum :: STR Char
 charNum         = do{ code <- decimal
                                 <|> do{ char 'o'; number 8 octDigit }
                                 <|> do{ char 'x'; number 16 hexDigit }
@@ -315,7 +315,7 @@ ascii3          = ['\NUL','\SOH','\STX','\ETX','\EOT','\ENQ','\ACK',
 -----------------------------------------------------------
 -- Numbers
 -----------------------------------------------------------
--- naturalOrFloat :: ST (Either Integer Double)
+-- naturalOrFloat :: STR (Either Integer Double)
 naturalOrFloat  = lexeme (natFloat) <?> "number"
 
 float           = lexeme floating   <?> "float"
@@ -384,7 +384,7 @@ int             = do{ f <- lexeme sign
                 ; return (f n)
                 }
 
--- sign            :: ST (Integer -> Integer)
+-- sign            :: STR (Integer -> Integer)
 sign            =   (char '-' >> return negate)
                 <|> (char '+' >> return id)
                 <|> return id
@@ -401,7 +401,7 @@ hexadecimal     = do{ oneOf "xX"; number 16 hexDigit }
 octal           = do{ oneOf "oO"; number 8 octDigit  }
 
 
-    -- number :: Integer -> ST Char -> ST Integer
+    -- number :: Integer -> STR Char -> STR Integer
 number base baseDigit
         = do{ digits <- many1 baseDigit
             ; let n = Prelude.foldl (\x d -> base*x + toInteger (digitToInt d)) 0 digits
@@ -420,7 +420,7 @@ lexeme p
 
 
 --whiteSpace
-whiteSpace  = skipMany (simpleSpace <?> "")
+whiteSpace  = skipMany (simpleSpace <?> " ")
 
 
 simpleSpace = skipMany1 (satisfy isSpace)

@@ -22,11 +22,26 @@ import Data.Ord
 
 type MFun=  Char -- usafeCoherced to char to store simply the address of the function
 type VarName = String
-type ShowF= ByteString
-type Context =  HT.HashTable Int (  StableName MFun, MFun,ShowF)
+data ShowF= Expr ByteString | Var Int  deriving Show
+type Context =  HT.HashTable Int (  StableName MFun, MFun,[ShowF],Int)
 
 data Error= Error String
-data Stat= Stat (Context, ByteString, ByteString)
+data StatW= StatW (Context, [ShowF], ByteString)
+
+
+
+data STW a= STW(StatW->  (StatW , a) )
+
+-- | monadic serialization
+instance  Monad STW where
+    return  x = STW (\s ->  (s, x))
+    STW g >>= f = STW (\s ->
+
+                       let (s', x)= g s
+                           STW fun  = f x
+                       in    fun s'
+                    )
+
 
 
 -- HT to map
@@ -34,7 +49,9 @@ empty  =   HT.new (==) HT.hashInt
 
 assocs = sortBy (comparing fst) . unsafePerformIO . HT.toList
 
-insert  k v ht= unsafePerformIO $ HT.insert ht k v >> return ht
+insert  k v ht= unsafePerformIO $ HT.update ht k v >> return ht
+
+delete  k  ht= unsafePerformIO $ HT.delete ht k  >> return ht
 
 lookup  k ht= unsafePerformIO $ HT.lookup ht k
 
@@ -64,9 +81,10 @@ varName x= "v"++ (show . hash) x
 
 
 
-numVar :: String -> Int
-numVar "" = error "refSerialize: numVar: null variable"
-numVar var= read  $ Prelude.tail var
+numVar :: String -> Maybe Int
+
+numVar ('v':var)= Just $ read  var
+numVar _ = Nothing
 
 
 

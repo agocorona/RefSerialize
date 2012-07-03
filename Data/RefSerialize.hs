@@ -125,16 +125,18 @@ module Data.RefSerialize
         showp
        ,readp
      )
-    ,Context
-    ,newContext
     ,rshowp
     ,rreadp
     ,showps
+    ,rshowps
+    ,runR
+    ,runW
     ,showpText
     ,readpText
-    ,takep
+
     ,showpBinary
     ,readpBinary
+    ,takep
     ,insertString
     ,insertChar
     ,rShow
@@ -142,14 +144,17 @@ module Data.RefSerialize
     ,insertVar
     ,readVar
     ,varName
-    ,runR
-    ,runRC
-    ,runW
 
     ,readHexp
     ,showHexp
-    ,getContext
-
+-- * Context handling
+    ,Context
+    ,getRContext
+    ,getWContext
+    ,newContext
+    ,showContext
+    ,runRC
+    ,runWC
 )
 
  where
@@ -160,7 +165,6 @@ import Unsafe.Coerce
 import Data.Char(isAlpha, isSpace, isAlphaNum)
 import Numeric(readHex,showHex)
 import Data.ByteString.Lazy.Char8 as B
---import Data.ByteString(breakSubstring)
 import Debug.Trace
 import Data.Binary
 import System.IO.Unsafe
@@ -212,8 +216,12 @@ rreadp = readVar  readp
 -- useful for delayed deserialzation of expresions, in case of dynamic variables were deserialization
 -- is done when needed, once the type is known with `runRC`
 
-getContext :: STR (Context, ByteString)
-getContext = STR(\(StatR(c,s,v)) -> Right (StatR (c,s,v), (c,v)))
+getRContext :: STR (Context, ByteString)
+getRContext = STR(\(StatR(c,s,v)) -> Right (StatR (c,s,v), (c,v)))
+
+getWContext :: STW (Context, ByteString)
+getWContext = STW(\(StatW(c,s,v)) ->  (StatW (c,s,v), (c,"")))
+
 
 -- | use the rshowp parser to serialize the object
 -- @ rShow c= runW  $  rshowp c@
@@ -275,18 +283,29 @@ runRC (c,vars) (STR f) struct=
 
 whereSep= "\r\nwhere{\r\n "
 
+
 -- |   serialize x with the parser
---runW :: STW () -> ByteString
-runW (STW f) =
-      let c = unsafePerformIO newContext
-          (StatW(c',str,_), _) = f (StatW(c,[],""))
-          scontext= assocs c'
-          vars= B.concat $ Prelude.map (\(n,(_,_,v,_))->"v" `append`  (pack $ show n)  `append`  "= "  `append`  showExpr v c'  `append`  ";\r\n ")  scontext
-          strContext= if Prelude.null scontext  then "" else  whereSep `append` vars  `append`  "\r\n}"
+runW :: STW () -> ByteString
+runW  f = unsafePerformIO $ do
+      c  <- newContext
+      return $ runWC (c,"") f `append` showContext c True
 
-      in  showExpr  str  c' `append` strContext
+-- | serialize x witn a given context and the parser
+runWC ::(Context, ByteString) -> STW () -> ByteString
+runWC (c,vars) (STW f) =
+      let
+          (StatW(c',str,_), _) = f (StatW(c,[],vars))
+      in  showExpr  str  c'
 
+-- | serialize the variables. if the Bool flag is true, it prepend the text with the string "where"
+showContext :: Context -> Bool -> ByteString
+showContext c False=
+     let  scontext= assocs c
+     in   B.concat $ Prelude.map (\(n,(_,_,v,_))->"v" `append`  (pack $ show n)  `append`  "= "  `append`  showExpr v c  `append`  ";\r\n ")  scontext
 
+showContext c True=
+          let vars= showContext c False
+          in if B.null vars  then "" else  whereSep `append` vars  `append`  "\r\n}"
 
 showExpr :: [ShowF] -> Context -> ByteString
 showExpr [] _ = B.empty
@@ -295,7 +314,7 @@ showExpr ex@(Var v:xs) c=
    case Data.RefSerialize.Serialize.lookup  v  c  of
            Nothing -> error $ "showp: not found first variable in "++ show ex
            Just (_,_,exp,1)  -> delete v c `seq` showExpr exp c `mappend` (cons ' ' $ showExpr xs c)
-           Just (_,_,exp,n)  -> pack ('v':show v) `mappend` (cons ' ' $ showExpr xs c)
+           Just (_,_,exp,n)  ->  pack ('v':show v)  `mappend` (cons ' ' $ showExpr xs c)
 
 
 
@@ -321,7 +340,7 @@ showExpr ex@(Var v:xs) c=
 
 
 
--- | output the string of the serialized variable
+-- | return the  serialization instead of updating the writer
 showps :: Serialize a =>  a -> STW ByteString
 showps x= STW(\(StatW(c,s,v))->
  let
@@ -330,7 +349,14 @@ showps x= STW(\(StatW(c,s,v))->
 
  in (StatW(c',s ,v), showExpr str c'))
 
+-- | return the variable name of the serialized data, which is put in the context
+-- and does not update the writer
+rshowps x= STW(\(StatW(c,s,v))->
+ let
+    STW f= rshowp x
+    (StatW (c',str,_), _) = f (StatW(c,[],v))
 
+ in (StatW(c',s ,v), showExpr str c'))
 
 -- | insert a variable at this position. The expression value is inserted in the "where" section if it is not already
 -- created. If the address of this object being parsed correspond with an address already parsed and
@@ -352,9 +378,9 @@ insertVar parser x= STW(\(StatW(c,s,v))->
 
          in (StatW(addc str c',s `mappend` [Var hash] ,v), ()))
  where
-  addc str c= insert ( hash) (st,unsafeCoerce x,  str,1) c
+  addc str c=  insert ( hash) (st,unsafeCoerce x,  str,1) c
+
   (hash,st) = hasht x
---  varname=  "v" ++ show hash
 
   findVar x c=
          case  Data.RefSerialize.Serialize.lookup  hash  c  of

@@ -2,7 +2,7 @@
 -}
 module Data.RefSerialize.Parser( STR(..),StatR(..),(<?>),(<|>),char,anyChar, string, upper, space, digit
                  , sepBy, between, choice, option, notFollowedBy, many, manyTill, oneOf, noneOf
-                 , bool
+                 , bool, readContent
 
                  , charLiteral      -- :: ST Char
                  , stringLiteral    -- :: ST String
@@ -147,6 +147,10 @@ noneOf xs= STR(\(StatR(cs,s,v)) -> let c= head s in if not $ c `Prelude.elem` xs
                                      else Left (Error ( "expected digit at the head of " ++ unpack s )))
 
 try p= p
+
+readContent= STR $ \(StatR(cs,s,v)) -> Right(StatR(cs,Data.ByteString.Lazy.Char8.empty,v), s)
+
+
 
 unexpected msg
     = STR (\state -> Left (Error $ msg++ "unexpected"))

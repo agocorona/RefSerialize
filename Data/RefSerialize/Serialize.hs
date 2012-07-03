@@ -8,7 +8,7 @@
 module Data.RefSerialize.Serialize where
 import GHC.Exts
 import Unsafe.Coerce
-import Data.List(isPrefixOf,insertBy,elem)
+import Data.List(isPrefixOf,insertBy,elem,sortBy)
 import Data.Char(isAlpha,isAlphaNum,isSpace,isUpper)
 
 import System.Mem.StableName
@@ -16,7 +16,7 @@ import System.IO.Unsafe
 import Control.Monad (MonadPlus(..))
 import Data.ByteString.Lazy.Char8 as B
 import qualified Data.HashTable  as HT
-import Data.List(sortBy)
+
 import Data.Ord
 
 
@@ -45,17 +45,23 @@ instance  Monad STW where
 
 
 -- HT to map
-empty  =   HT.new (==) HT.hashInt
+empty  =    HT.new (==) HT.hashInt
 
 assocs = sortBy (comparing fst) . unsafePerformIO . HT.toList
 
-insert  k v ht= unsafePerformIO $ HT.update ht k v >> return ht
 
-delete  k  ht= unsafePerformIO $ HT.delete ht k  >> return ht
+insert  k v ht= unsafePerformIO $! HT.update ht k v >> return ht
 
-lookup  k ht= unsafePerformIO $ HT.lookup ht k
+
+
+delete  k  ht= unsafePerformIO $! HT.delete ht k  >> return ht
+
+
+lookup  k ht= unsafePerformIO $! HT.lookup ht k
+
 
 toList  = unsafePerformIO . HT.toList
+
 
 fromList = unsafePerformIO . HT.fromList HT.hashInt
 

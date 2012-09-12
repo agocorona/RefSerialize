@@ -25,92 +25,35 @@
      This package leverages Show, Read and Data.Binary instances while it permits textual as well as binary serialization
       keeping internal  references.
 
-     Here comes a brief tutorial:
-
      NOTE: to avoid long lists of variables with only one reference,
      now variables not referenced two or more times are inlined
      so rshowp serializes the same result than showp in these cases.
      However, showp is faster.
      In correspondence, rreadp call readp when there is no variable serialized.
 
-     The tutorial below does not reflect this change.
-
-     @runW applies showp, the serialization parser of the instance Int for the RefSerialize class
-
-    @Data.RefSerialize>let x= 5 :: Int
-    Data.RefSerialize>runW $ showp x
-    "5"@
-
-    every instance of Read and Show is an instance of RefSerialize. for how to construct showp and readp parsers, see the demo.hs
-
-    rshowp is derived from showp, it labels the serialized data with a variable name
-
-    @Data.RefSerialize>runW $ rshowp x
-    " v8 where {v8= 5; }"@
-
-    @Data.RefSerialize>runW $ rshowp [2::Int,3]
-    " v6 where {v6= [ v9,  v10]; v9= 2; v10= 3; }"@
-
-    however rshowp does a normal show serialization
-
-    @Data.RefSerialize>runW $ showp [x,x]
-    "[5, 5]"@
-
-    rshowp variables are serialized memory references: no piece of data that point to the same addrees is serialized but one time
-
-    @Data.RefSerialize>runW $ rshowp [x,x]
-    " v9 where {v6= 5; v9= [ v6, v6]; }"@
 
 
+     This is an example of a showp parser for a simple data structure.
 
-    "this happens recursively"
+>     data S= S Int Int deriving ( Show, Eq)
+>
+>     instance  Serialize S  where
+>        showp (S x y)= do
+>                        insertString "S"
+>                        rshowp x       -- rshowp parsers can be inside showp parser
+>                        rshowp y
+>
+>
+>        readp =  do
+>                        symbol "S"     -- I included a (almost) complete Parsec for deserialization
+>                        x <- rreadp
+>                        y <- rreadp
+>                        return $ S x y
 
-    @Data.RefSerialize>let xs= [x,x] in str = runW $ rshowp [xs,xs]
-    Data.RefSerialize>str
-    " v8 where {v8= [ v10, v10]; v9= 5; v10= [ v9, v9]; }"@
+     there is a mix between referencing and no referencing parser here:
 
-    the data  serialized with rshop is read with rreadp. The showp serialized data is read by readp
-
-    @Data.RefSerialize>let xss= runR rreadp str :: [[Int]]
-    Data.RefSerialize>print xss
-    [[5,5],[5,5]]@
-
-
-    the deserialized data keep the references!! pointers are restored! That is the whole point!
-
-    Data.RefSerialize>varName xss !! 0 == varName xss !! 1
-    True
-
-
-    rShow= runW rshowp
-    rRead= runR rreadp
-
-    Data.RefSerialize>rShow x
-    " v11 where {v11= 5; }"
-
-
-
-    This is an example of a showp parser for a simple data structure.
-
-    data S= S Int Int deriving ( Show, Eq)
-
-    instance  Serialize S  where
-        showp (S x y)= do
---                      insertString "S"
-                        rshowp x  -- rshowp parsers can be inside showp parser
-                        rshowp y
-
-
-       readp =  do
-                        symbol "S"     -- I included a (almost) complete Parsec for deserialization
-                        x <- rreadp
-                        y <- rreadp
-                        return $ S x y
-
-    there is a mix between referencing and no referencing parser here:
-
-    Data.RefSerialize>putStrLn $ runW $ showp $ S x x
-    S  v23 v23 where {v23= 5; }@
+>    Data.RefSerialize>putStrLn $ runW $ showp $ S x x
+>    S  v23 v23 where {v23= 5; }
 
 -}
 
@@ -136,7 +79,7 @@ module Data.RefSerialize
 
     ,showpBinary
     ,readpBinary
-    ,takep
+
     ,insertString
     ,insertChar
     ,rShow
@@ -144,7 +87,7 @@ module Data.RefSerialize
     ,insertVar
     ,readVar
     ,varName
-
+    ,takep
     ,readHexp
     ,showHexp
 -- * Context handling
@@ -171,6 +114,9 @@ import System.IO.Unsafe
 import qualified Data.Map as M
 import Data.Monoid
 import Data.Maybe
+
+import Debug.Trace
+(!>) = flip . trace
 
 newContext :: IO Context
 newContext  = Data.RefSerialize.Serialize.empty
@@ -650,10 +596,11 @@ readpBinary = do
 
 -- return n chars form the serialized data
 takep :: Int -> STR ByteString
-takep n= take1 "" n
+takep n=   take1 "" n
   where
-  take1 s 0= return s
-  take1 s n= anyChar >>= \x -> take1 (snoc s x) (n-1)
+  take1 s 0= return  s
+  take1 s n=  anyChar >>= \x -> take1 (snoc s x ) (n-1)
+
 
 -- | defualt instances
 

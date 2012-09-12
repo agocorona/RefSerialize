@@ -2,7 +2,7 @@
 -}
 module Data.RefSerialize.Parser( STR(..),StatR(..),(<?>),(<|>),char,anyChar, string, upper, space, digit
                  , sepBy, between, choice, option, notFollowedBy, many, manyTill, oneOf, noneOf
-                 , bool, readContent
+                 , bool, try, Data.RefSerialize.Parser.empty, readContent
 
                  , charLiteral      -- :: ST Char
                  , stringLiteral    -- :: ST String
@@ -72,6 +72,7 @@ infix  0 <?>
 
 p <?> msg = label p msg
 
+
 parsecPlus :: STR a -> STR a -> STR a
 parsecPlus (STR p1) (STR p2)
     = STR (\state ->
@@ -95,6 +96,13 @@ labels (STR p) msgs
 
           other       -> other
       )
+
+---- return n chars form the serialized data
+--takep :: Int -> STR ByteString
+--takep n=   STR $ \(StatR(cs,s,v)) ->
+--   let (h,t)= Data.ByteString.Lazy.Char8.splitAt (fromIntegral n) s in h `seq` t `seq` Right(StatR(cs,t,v), h)
+--
+
 
 char :: Char -> STR Char
 
@@ -127,7 +135,10 @@ space =STR(\(StatR(cs,s,v)) ->  let  heads= head s in
      else Left (Error ( "expected space at the head of " ++ unpack s )))
 
 
-digit1 l1 l2= STR(\(StatR(cs,s,v)) -> let c= head s in  if c >= l1 && c <= l2  then Right(StatR(cs,tail s,v), c)
+digit1 l1 l2= STR(\(StatR(cs,s,v)) ->
+  if null s then Left (Error $ unexpectedEndOfInput)
+            else let c= head s in  if c >= l1 && c <= l2
+                                     then Right(StatR(cs,tail s,v), c)
                                      else Left (Error ( "expected digit at the head of " ++ unpack s )))
 
 empty = STR(\(StatR(cs,s,v)) ->   if null s  then Right(StatR(cs, s,v), ())
@@ -137,16 +148,27 @@ octDigit= digit1 '0' '7'
 
 digit= digit1 '0' '9'
 
-hexDigit= STR(\(StatR(cs,s,v)) ->  let c= head s in if c >= '0' && c <= '9'  || c >= 'a' && c<='f'  || c >= 'A' && c <= 'F'  then Right(StatR(cs,tail s,v), c)
+hexDigit= STR(\(StatR(cs,s,v)) ->
+ if null s then Left (Error $ unexpectedEndOfInput)
+      else let c= head s in if c >= '0' && c <= '9'  || c >= 'a' && c<='f'  || c >= 'A' && c <= 'F'  then Right(StatR(cs,tail s,v), c)
                                      else Left (Error ( "expected space at the head of " ++ unpack s )))
 
-oneOf xs= STR(\(StatR(cs,s,v)) -> let c= head s in if c `Prelude.elem` xs then Right(StatR(cs,tail s,v), c)
+oneOf xs= STR(\(StatR(cs,s,v)) ->
+ if null s then Left (Error $ unexpectedEndOfInput)
+           else let c= head s in if c `Prelude.elem` xs then Right(StatR(cs,tail s,v), c)
                                      else Left (Error ( "expected digit at the head of " ++ unpack s )))
 
-noneOf xs= STR(\(StatR(cs,s,v)) -> let c= head s in if not $ c `Prelude.elem` xs then Right(StatR(cs,tail s,v), c)
+noneOf xs= STR(\(StatR(cs,s,v)) ->
+   if null s then Left (Error $ unexpectedEndOfInput)
+             else  let c= head s in if not $ c `Prelude.elem` xs then Right(StatR(cs,tail s,v), c)
                                      else Left (Error ( "expected digit at the head of " ++ unpack s )))
 
-try p= p
+try p= do
+  (cs,s,v)<- STR $ \(StatR(cs,s,v)) ->  Right(StatR(cs, s,v), (cs,s,v))
+  r <- p
+  STR(\(StatR _) -> Right(StatR(cs, s,v), r))
+
+
 
 readContent= STR $ \(StatR(cs,s,v)) -> Right(StatR(cs,Data.ByteString.Lazy.Char8.empty,v), s)
 

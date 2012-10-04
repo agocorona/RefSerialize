@@ -3,6 +3,7 @@
             -XFlexibleInstances
             -XUndecidableInstances
             -XOverloadedStrings
+            -XIncoherentInstances
               #-}
 
 -----------------------------------------------------------------------------
@@ -85,8 +86,9 @@ module Data.RefSerialize
     ,rShow
     ,rRead
     ,insertVar
+    ,addrHash
     ,readVar
-    ,varName
+
     ,takep
     ,readHexp
     ,showHexp
@@ -243,6 +245,12 @@ runWC (c,vars) (STW f) =
           (StatW(c',str,_), _) = f (StatW(c,[],vars))
       in  showExpr  str  c'
 
+
+
+--  let STW f= insertVar (const $ return ()) x >> return (varName x)
+--       (StatW(c',str,_), v) = f (StatW(c,[],""))
+--   in v
+
 -- | serialize the variables. if the Bool flag is true, it prepend the text with the string "where"
 showContext :: Context -> Bool -> ByteString
 showContext c False=
@@ -333,6 +341,7 @@ insertVar parser x= STW(\(StatW(c,s,v))->
            Nothing -> False
            Just (x,y,z,n)  ->  insert hash (x,y,z,n+1) c  `seq`  True
 
+
 -- | inform if the expression iwas already referenced and return @Right varname@
 --  otherwise, add the expresion to the context and giive it a name and return  @Left varname@
 -- The varname is not added to the serialized expression. The user must serialize it
@@ -407,10 +416,6 @@ insertChar car= STW(\(StatW(c, s,v)) -> (StatW(c, s `mappend` [Expr $ pack [car]
 
 -- -------------Instances
 
-instance Serialize String where
-    showp = showpText
-    readp = readpText
-
 
 instance  Serialize a => Serialize [a] where
    showp []= insertString "[]"
@@ -472,6 +477,10 @@ instance Serialize a => Serialize [a] where
 
 -}
 
+
+instance Serialize String where
+    showp = showpText
+    readp = readpText
 
 
 instance (Serialize a, Serialize b) => Serialize (a, b) where
@@ -602,11 +611,11 @@ takep n=   take1 "" n
   take1 s n=  anyChar >>= \x -> take1 (snoc s x ) (n-1)
 
 
--- | defualt instances
+-- | default instances
 
-instance (Show a, Read a )=> Serialize a where
-  showp= showpText
-  readp= readpText
+--instance (Show a, Read a )=> Serialize a where
+--  showp= showpText
+--  readp= readpText
 
 
 

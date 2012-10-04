@@ -65,6 +65,19 @@ toList  = unsafePerformIO . HT.toList
 
 fromList = unsafePerformIO . HT.fromList HT.hashInt
 
+-- | return a unique hash identifier for an object
+-- the context assures that no StableName used in addrStr is garbage collected,
+-- so the hashes are constant and the correspondence address - string
+-- remain one to one as long as the context is not garbage collected.
+-- Left is returned if it is the first time that @addHash@ is called for that variable
+addrHash :: Context -> a -> IO (Either Int Int)
+addrHash c x =
+  case  Data.RefSerialize.Serialize.lookup  hash  c  of
+           Nothing -> addc [Var hash] c >>  return (Left hash)
+           Just (x,y,z,n)  -> HT.update c hash (x,y,z,n+1) >> return (Right hash)
+  where
+  addc str c=  HT.update c hash (st,unsafeCoerce x,  str,1)
+  (hash,st) = hasht x
 
 readContext :: ByteString -> ByteString -> (ByteString, ByteString)
 readContext pattern str= readContext1  (pack "") str where
@@ -80,7 +93,10 @@ hasht x= unsafePerformIO $ do
        st <- makeStableName $! x
        return (hashStableName st,unsafeCoerce st)
 
--- !  two variables that point to the same address will have identical varname (derived from import System.Mem.StableName)varName:: a -> String
+-- | two variables that point to the same address will have identical varname (derived from import System.Mem.StableName)varName:: a -> String
+-- . The stable names of during the serializing deserializing process are not deleted
+-- . This is assured by the pointers in the context,
+-- so the hash values remain and the comparison of varNames is correct.
 varName x= "v"++ (show . hash) x
   where hash x= let (ht,_)= hasht x in ht
 

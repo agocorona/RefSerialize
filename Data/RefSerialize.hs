@@ -239,7 +239,7 @@ runW  f = unsafePerformIO $ do
       return $ runWC (c,"") f `append` showContext c True
 
 -- | serialize x witn a given context and the parser
-runWC ::(Context, ByteString) -> STW () -> ByteString
+runWC :: (Context, ByteString) -> STW () -> ByteString
 runWC (c,vars) (STW f) =
       let
           (StatW(c',str,_), _) = f (StatW(c,[],vars))
@@ -366,7 +366,7 @@ isInVars parser x= STW(\(StatW(c,s,v))->
   trytofindEntireObject x c=
          case Data.RefSerialize.Serialize.lookup  hash  c  of
            Nothing -> Nothing
-           Just(x,y,z,n)  -> insert hash (x,y,z,n+1) `seq` Just varname
+           Just(x,y,z,n)  -> insert hash (x,y,z,n+1) c `seq` Just varname
 
 
 

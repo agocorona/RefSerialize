@@ -15,15 +15,15 @@ import System.Mem.StableName
 import System.IO.Unsafe
 import Control.Monad (MonadPlus(..))
 import Data.ByteString.Lazy.Char8 as B
-import qualified Data.HashTable  as HT
-
+--import qualified Data.HashTable  as HT
+import qualified Data.HashTable.IO as HT
 import Data.Ord
 
 
 type MFun=  Char -- usafeCoherced to char to store simply the address of the function
 type VarName = String
 data ShowF= Expr ByteString | Var Int  deriving Show
-type Context =  HT.HashTable Int (  StableName MFun, MFun,[ShowF],Int)
+type Context =  HT.BasicHashTable Int (  StableName MFun, MFun,[ShowF],Int)
 
 data Error= Error String
 data StatW= StatW (Context, [ShowF], ByteString)
@@ -45,12 +45,12 @@ instance  Monad STW where
 
 
 -- HT to map
-empty  =    HT.new (==) HT.hashInt
+empty  =    HT.new -- (==) HT.hashInt
 
 assocs = sortBy (comparing fst) . unsafePerformIO . HT.toList
 
 
-insert  k v ht= unsafePerformIO $! HT.update ht k v >> return ht
+insert  k v ht= unsafePerformIO $! HT.insert ht k v >> return ht
 
 
 
@@ -63,7 +63,7 @@ lookup  k ht= unsafePerformIO $! HT.lookup ht k
 toList  = unsafePerformIO . HT.toList
 
 
-fromList = unsafePerformIO . HT.fromList HT.hashInt
+fromList = unsafePerformIO . HT.fromList -- HT.hashInt
 
 -- | return a unique hash identifier for an object
 -- the context assures that no StableName used in addrStr is garbage collected,
@@ -74,9 +74,9 @@ addrHash :: Context -> a -> IO (Either Int Int)
 addrHash c x =
   case  Data.RefSerialize.Serialize.lookup  hash  c  of
            Nothing -> addc [Var hash] c >>  return (Left hash)
-           Just (x,y,z,n)  -> HT.update c hash (x,y,z,n+1) >> return (Right hash)
+           Just (x,y,z,n)  -> HT.insert c hash (x,y,z,n+1) >> return (Right hash)
   where
-  addc str c=  HT.update c hash (st,unsafeCoerce x,  str,1)
+  addc str c=  HT.insert c hash (st,unsafeCoerce x,  str,1)
   (hash,st) = hasht x
 
 readContext :: ByteString -> ByteString -> (ByteString, ByteString)

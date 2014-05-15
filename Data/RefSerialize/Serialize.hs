@@ -15,9 +15,10 @@ import System.Mem.StableName
 import System.IO.Unsafe
 import Control.Monad (MonadPlus(..))
 import Data.ByteString.Lazy.Char8 as B
---import qualified Data.HashTable  as HT
+import Data.ByteString.Lazy.Search
 import qualified Data.HashTable.IO as HT
 import Data.Ord
+import Data.Monoid
 
 
 type MFun=  Char -- usafeCoherced to char to store simply the address of the function
@@ -80,13 +81,17 @@ addrHash c x =
   (hash,st) = hasht x
 
 readContext :: ByteString -> ByteString -> (ByteString, ByteString)
-readContext pattern str= readContext1  (pack "") str where
+readContext pattern str=
+  let (s1,s2)= breakOn (toStrict pattern) str
+  in  (s1, B.drop (fromIntegral $ B.length pattern) s2)
 
- readContext1 :: ByteString -> ByteString -> (ByteString, ByteString)
- readContext1 s str| B.null str = (s, pack "")
-                   | pattern `B.isPrefixOf` str = (s, B.drop n str)
-                   | otherwise=   readContext1 (snoc s (B.head str)) (B.tail str)
-                    where n= fromIntegral $ B.length pattern
+--readContext pattern str= readContext1  mempty str where
+--
+-- readContext1 :: ByteString -> ByteString -> (ByteString, ByteString)
+-- readContext1 s str| B.null str = (s, pack "")
+--                   | pattern `B.isPrefixOf` str = (s, B.drop n str)
+--                   | otherwise=   readContext1 (snoc s (B.head str)) (B.tail str)
+--                    where n= fromIntegral $ B.length pattern
 
 
 hasht x= unsafePerformIO $ do

@@ -117,8 +117,8 @@ import qualified Data.Map as M
 import Data.Monoid
 import Data.Maybe
 
-import Debug.Trace
-(!>) = flip . trace
+--import Debug.Trace
+--(!>) = flip  trace
 
 newContext :: IO Context
 newContext  = Data.RefSerialize.Serialize.empty
@@ -211,7 +211,7 @@ readpText = STR(\(StatR(c,s,v)) ->
    in if Prelude.null l then Left . Error $  "not readable: " ++ us
          else let ((x,str2):_)= l
               in Right(StatR(c, pack $ Prelude.dropWhile isSpace str2,v),x) )
-   <?> "readp: readsPrec "
+   <?> "readpText: readsPrec "
 
 
 
@@ -599,17 +599,21 @@ readpBinary :: Binary a => STR a
 readpBinary = do
       symbol binPrefix
       n     <- integer
-      str   <- takep $ fromIntegral n
+      str   <- takep (fromIntegral n)
       let x = decode str
       return x
 
 -- return n chars form the serialized data
-takep :: Int -> STR ByteString
-takep n=   take1 "" n
-  where
-  take1 s 0= return  s
-  take1 s n=  anyChar >>= \x -> take1 (snoc s x ) (n-1)
+--takep :: Int -> STR ByteString
+--takep n=   take1 "" n
+--  where
+--  take1 s 0= return  s
+--  take1 s n=  anyChar >>= \x -> take1 (snoc s x ) (n-1)
 
+takep n=STR(\(StatR(c,s,v)) ->
+   let (x,r)= B.splitAt n s
+   in Right(StatR(c, r,v),x) )
+   <?> "takep "
 
 -- | default instances
 

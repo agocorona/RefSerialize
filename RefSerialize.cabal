@@ -1,5 +1,5 @@
 name:                RefSerialize
-version:             0.3.1.0
+version:             0.3.1.2
 synopsis:            Write to and read from ByteStrings maintaining internal memory references
 description:
                      Read, Show and Binary instances do not check for internal data references to the same address.
@@ -9,7 +9,7 @@ description:
                      data is very typical in a pure language such is Haskell, this means that the resulting data loose the beatiful
                      economy of space and processing time that referential transparency permits.
                      .
-                     In this release the default "(Read a, Show a) => Refserialize a" has been removed.
+                     In this release deserialization is much, much faster by using the stringsearch package
                      .
                      See "Data.RefSerialize" for details
 
@@ -22,7 +22,7 @@ author:                Alberto Gómez Corona
 maintainer:           agocorona@gmail.com
 Tested-With:        GHC == 6.8.2
 Build-Type:          Simple
-build-Depends:      binary,bytestring, base >=4 && <5,containers, hashtables
+build-Depends:      binary,bytestring, base >=4 && <5,containers, hashtables,stringsearch
 
 
 exposed-modules:     Data.RefSerialize, Data.RefSerialize.Parser, Data.RefSerialize.Serialize

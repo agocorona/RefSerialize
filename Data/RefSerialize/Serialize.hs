@@ -1,9 +1,10 @@
-{-# OPTIONS -XOverlappingInstances
-            -XTypeSynonymInstances
-            -XFlexibleInstances
-            -XUndecidableInstances
-            -XOverloadedStrings
-            -XNoMonomorphismRestriction
+{-# LANGUAGE OverlappingInstances
+            ,TypeSynonymInstances
+            ,FlexibleInstances
+            ,UndecidableInstances
+            ,OverloadedStrings
+            ,NoMonomorphismRestriction
+            ,BangPatterns
               #-}
 module Data.RefSerialize.Serialize where
 import GHC.Exts
@@ -20,6 +21,28 @@ import qualified Data.HashTable.IO as HT
 import Data.Ord
 import Data.Monoid
 
+-- All this for myToStrict for compatibility with older versions of bytestring that
+-- lack a "toStrict" call
+import qualified Data.ByteString        as S  -- S for strict (hmm...)
+import qualified Data.ByteString.Internal as S
+import qualified Data.ByteString.Unsafe as S
+import Data.ByteString.Lazy.Internal
+import Foreign.ForeignPtr       (withForeignPtr)
+import Foreign.Ptr
+
+
+myToStrict :: ByteString -> S.ByteString
+myToStrict Empty           = S.empty
+myToStrict (Chunk c Empty) = c
+myToStrict cs0 = S.unsafeCreate totalLen $ \ptr -> go cs0 ptr
+  where
+    totalLen = foldlChunks (\a c -> a + S.length c) 0 cs0
+
+    go Empty                        !_       = return ()
+    go (Chunk (S.PS fp off len) cs) !destptr =
+      withForeignPtr fp $ \p -> do
+        S.memcpy destptr (p `plusPtr` off) (fromIntegral len)
+        go cs (destptr `plusPtr` len)
 
 type MFun=  Char -- usafeCoherced to char to store simply the address of the function
 type VarName = String
@@ -82,7 +105,7 @@ addrHash c x =
 
 readContext :: ByteString -> ByteString -> (ByteString, ByteString)
 readContext pattern str=
-  let (s1,s2)= breakOn (toStrict pattern) str
+  let (s1,s2)= breakOn (myToStrict pattern) str
   in  (s1, B.drop (fromIntegral $ B.length pattern) s2)
 
 --readContext pattern str= readContext1  mempty str where

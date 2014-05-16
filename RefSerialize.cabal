@@ -1,5 +1,5 @@
 name:                RefSerialize
-version:             0.3.1.2
+version:             0.3.1.3
 synopsis:            Write to and read from ByteStrings maintaining internal memory references
 description:
                      Read, Show and Binary instances do not check for internal data references to the same address.
@@ -9,8 +9,13 @@ description:
                      data is very typical in a pure language such is Haskell, this means that the resulting data loose the beatiful
                      economy of space and processing time that referential transparency permits.
                      .
-                     In this release deserialization is much, much faster by using the stringsearch package
+                     In this release:
                      .
+                     Compatibility with older versions of bytestring that have no 'toStrict' call
+                     .
+                     deserialization is much, much faster by using the stringsearch package
+                     .
+
                      See "Data.RefSerialize" for details
 
 

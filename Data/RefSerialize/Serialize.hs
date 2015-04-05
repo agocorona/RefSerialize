@@ -15,6 +15,7 @@ import Data.Char(isAlpha,isAlphaNum,isSpace,isUpper)
 import System.Mem.StableName
 import System.IO.Unsafe
 import Control.Monad (MonadPlus(..))
+import Control.Applicative
 import Data.ByteString.Lazy.Char8 as B
 import Data.ByteString.Lazy.Search
 import qualified Data.HashTable.IO as HT
@@ -55,6 +56,22 @@ data StatW= StatW (Context, [ShowF], ByteString)
 
 
 data STW a= STW(StatW->  (StatW , a) )
+
+instance Functor STW where
+  fmap f (STW stwx)= STW $ \s -> 
+             let (s',x) = stwx s
+             in (s', f x)
+
+instance Applicative STW where
+    pure x = STW (\s ->  (s, x))
+    
+    STW g <*> STW f = STW (\s -> 
+
+                       let (s', x)= g s
+                           (s'',y)= f s'
+                       in  (s'', x y)
+                    )
+
 
 -- | monadic serialization
 instance  Monad STW where

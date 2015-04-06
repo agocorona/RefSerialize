@@ -41,9 +41,34 @@ import Data.Char(isUpper,isSpace,digitToInt)
 import qualified Data.Map as M
 import Data.RefSerialize.Serialize
 import Data.ByteString.Lazy.Char8
+import Control.Applicative  hiding ( (<|>),many)
+import qualified Control.Applicative as CA((<|>),many)
 
 data StatR= StatR (Context, ByteString, ByteString)
-data STR a= STR(StatR-> Either Error (StatR , a) )
+data STR a= STR(StatR -> Either Error (StatR , a) )
+
+instance Functor STR where
+    fmap f (STR strx)= STR $ \s -> 
+             let mr = strx s
+             in case mr of
+                 Right (s',x) -> Right(s',f x)
+                 Left err -> Left err
+
+instance Applicative STR where
+    pure x= STR (\s -> Right (s, x))
+    STR g <*> STR f= STR $ \ s ->
+                       let mr = g s
+                       in case mr of
+                         Left err -> Left err
+                         Right (s' , x) ->
+                           let mr = f s'
+                           in case mr of
+                             Left err -> Left err
+                             Right(s'', y) -> Right(s'', x y)
+
+instance Alternative STR where
+    empty=  STR (\_ -> Left $ Error "an error occurred")
+    (<|>) = parsecPlus
 
 -- | monadic serialization & deserialization
 instance  Monad STR where
@@ -61,6 +86,8 @@ instance  Monad STR where
                         Left msg -> Left msg
 
                     )
+
+
 
 instance MonadPlus STR where
   mzero= STR (\(StatR (a,b,c)) -> Left $ Error "an error occurred")

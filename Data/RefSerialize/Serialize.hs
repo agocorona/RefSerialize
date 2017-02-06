@@ -1,5 +1,4 @@
-{-# LANGUAGE OverlappingInstances
-            ,TypeSynonymInstances
+{-# LANGUAGE TypeSynonymInstances
             ,FlexibleInstances
             ,UndecidableInstances
             ,OverloadedStrings
@@ -58,14 +57,14 @@ data StatW= StatW (Context, [ShowF], ByteString)
 data STW a= STW(StatW->  (StatW , a) )
 
 instance Functor STW where
-  fmap f (STW stwx)= STW $ \s -> 
+  fmap f (STW stwx)= STW $ \s ->
              let (s',x) = stwx s
              in (s', f x)
 
 instance Applicative STW where
     pure x = STW (\s ->  (s, x))
-    
-    STW g <*> STW f = STW (\s -> 
+
+    STW g <*> STW f = STW (\s ->
 
                        let (s', x)= g s
                            (s'',y)= f s'

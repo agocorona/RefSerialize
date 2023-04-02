@@ -19,7 +19,7 @@
      As a result, the data is duplicated when serialized. This is a waste of space in the filesystem
      and  also a waste of serialization time. but the worst consequence is that, when the serialized data is read,
      it allocates multiple copies for the same object when referenced multiple times. Because multiple referenced
-     data is very typical in a pure language such is Haskell, this means that the resulting data loose the beatiful
+     data is very typical in a pure language such is Haskell, this means that the resulting data loose the beautiful
      economy of space and processing time that referential transparency permits.
 
      This package leverages Show, Read and Data.Binary instances while it permits textual as well as binary serialization
@@ -48,7 +48,7 @@
     Data.RefSerialize>runW $ showp [x,x]
     "[5, 5]"
 
-    rshowp variables are serialized memory references: no piece of data that point to the same addrees is serialized but one time
+    rshowp variables are serialized memory references: no piece of data that point to the same address is serialized but one time
 
     Data.RefSerialize>runW $ rshowp [x,x]
     " v9 where {v6= 5; v9= [ v6, v6]; }"
@@ -82,7 +82,7 @@
     " v11 where {v11= 5; }"
 
 
-    In the definition of a referencing parser non referencing parsers can be used and viceversa. Use a referencing parser
+    In the definition of a referencing parser non referencing parsers can be used and vice-versa. Use a referencing parser
     when the piece of data is being referenced many times inside the serialized data.
 
     by default the referencing parser is constructed by:
@@ -173,7 +173,7 @@ newContext :: IO Context
 newContext  = Data.RefSerialize.Serialize.empty
 
 class Serialize c where
-   showp :: c -> ST ()     -- ^ shows the content of a expression, must be  defined bu the user
+   showp :: c -> ST ()     -- ^ shows the content of a expression, must be  defined by the user
    readp ::  ST c          -- ^ read the content of a expression, must be user defined
 
 -- | insert a reference (a variable in the where section).
@@ -210,7 +210,7 @@ rreadp = readVar  readp
 
 
 -- | return the serialized list of variable values
--- useful for delayed deserialzation of expresions, in case of dynamic variables were deserialization
+-- useful for delayed deserialzation of expressions, in case of dynamic variables were deserialization
 -- is done when needed, once the type is known with `runRC`
 
 getContext :: ST (Context, ByteString)
@@ -221,7 +221,7 @@ getContext = ST(\(Stat(c,s,v)) -> Right (Stat (c,s,v), (c,v)))
 rShow :: Serialize c => c -> ByteString
 rShow c= runW  $  showp c
 
--- | deserialize  trough the rreadp parser
+-- | deserialize  through the rreadp parser
 -- @ rRead str= runR rreadp $ str@
 rRead :: Serialize c => ByteString -> c
 rRead str= runR readp $ str
@@ -332,7 +332,7 @@ insertVar parser x= ST(\(Stat(c,s,v))->
            Just _  -> Just varname
 
 -- | inform if the expression iwas already referenced and return @Right varname@
---  otherwise, add the expresion to the context and giive it a name and return  @Left varname@
+--  otherwise, add the expression to the context and giive it a name and return  @Left varname@
 -- The varname is not added to the serialized expression. The user must serialize it
 -- This is usefu for expressions that admit different syntax depending or recursiviity, such are lists
 
@@ -597,7 +597,7 @@ takep n= take1 "" n
   take1 s 0= return s
   take1 s n= anyChar >>= \x -> take1 (snoc s x) (n-1)
 
--- | defualt instances
+-- | default instances
 
 instance (Show a, Read a )=> Serialize a where
   showp= showpText

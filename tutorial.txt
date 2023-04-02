@@ -19,7 +19,7 @@ while showp does a normal show serialization
 Data.RefSerialize>runW $ showp [x,x]
 "[5, 5]"
 
-rshowp variables are serialized memory references: no piece of data that point to the same addrees is serialized but one time
+rshowp variables are serialized memory references: no piece of data that point to the same address is serialized but one time
 
 Data.RefSerialize>runW $ rshowp [x,x]
 " v9 where {v6= 5; v9= [ v6, v6]; }"
@@ -51,7 +51,7 @@ Data.RefSerialize>rShow x
 " v11 where {v11= 5; }"
 
 
-In the definition of a referencing parser non referencing parsers can be used and viceversa. Use a referencing parser
+In the definition of a referencing parser non referencing parsers can be used and vice-versa. Use a referencing parser
 when the piece of data is being referenced many times inside the serialized data.
 
 by default the referencing parser is constructed by:

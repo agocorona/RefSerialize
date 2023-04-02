@@ -81,7 +81,7 @@ instance  Monad STR where
                               STR fun  = f x
                           in  case  fun s' of
                                left@(Left msg) -> left
-                               rigth->  rigth
+                               right->  right
 
                         Left msg -> Left msg
 

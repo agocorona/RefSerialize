@@ -20,7 +20,7 @@
      As a result, the data is duplicated when serialized. This is a waste of space in the filesystem
      and  also a waste of serialization time. but the worst consequence is that, when the serialized data is read,
      it allocates multiple copies for the same object when referenced multiple times. Because multiple referenced
-     data is very typical in a pure language such is Haskell, this means that the resulting data loose the beatiful
+     data is very typical in a pure language such is Haskell, this means that the resulting data loose the beautiful
      economy of space and processing time that referential transparency permits.
 
      This package leverages Show, Read and Data.Binary instances while it permits textual as well as binary serialization
@@ -124,7 +124,7 @@ newContext :: IO Context
 newContext  = Data.RefSerialize.Serialize.empty
 
 class Serialize c where
-   showp :: c -> STW ()     -- ^ shows the content of a expression, must be  defined bu the user
+   showp :: c -> STW ()     -- ^ shows the content of a expression, must be  defined by the user
    readp ::  STR c          -- ^ read the content of a expression, must be user defined
 
 -- | insert a reference (a variable in the where section).
@@ -161,7 +161,7 @@ rreadp = readVar  readp
 
 
 -- | return the serialized list of variable values
--- useful for delayed deserialzation of expresions, in case of dynamic variables were deserialization
+-- useful for delayed deserialzation of expressions, in case of dynamic variables were deserialization
 -- is done when needed, once the type is known with `runRC`
 
 getRContext :: STR (Context, ByteString)
@@ -176,7 +176,7 @@ getWContext = STW(\(StatW(c,s,v)) ->  (StatW (c,s,v), (c,"")))
 rShow :: Serialize c => c -> ByteString
 rShow c= runW  $  showp c
 
--- | deserialize  trough the rreadp parser
+-- | deserialize  through the rreadp parser
 -- @ rRead str= runR rreadp $ str@
 rRead :: Serialize c => ByteString -> c
 rRead str= runR readp $ str
@@ -238,7 +238,7 @@ runW  f = unsafePerformIO $ do
       c  <- newContext
       return $ runWC (c,"") f `append` showContext c True
 
--- | serialize x witn a given context and the parser
+-- | serialize x with a given context and the parser
 runWC :: (Context, ByteString) -> STW () -> ByteString
 runWC (c,vars) (STW f) =
       let
@@ -343,7 +343,7 @@ insertVar parser x= STW(\(StatW(c,s,v))->
 
 
 -- | inform if the expression iwas already referenced and return @Right varname@
---  otherwise, add the expresion to the context and giive it a name and return  @Left varname@
+--  otherwise, add the expression to the context and giive it a name and return  @Left varname@
 -- The varname is not added to the serialized expression. The user must serialize it
 -- This is usefu for expressions that admit different syntax depending or recursiviity, such are lists
 
